@@ -4,7 +4,6 @@ import {
   Arg,
   Ctx,
   Field,
-  InputType,
   Mutation,
   ObjectType,
   Query,
@@ -12,15 +11,10 @@ import {
 } from "type-graphql";
 import argon2 from "argon2";
 import { EntityManager } from "@mikro-orm/postgresql";
-
-@InputType()
-class UsernamePasswordInput {
-  @Field()
-  username: string;
-
-  @Field()
-  password: string;
-}
+import { COOKIE_NAME } from "../constants";
+import { UsernamePasswordInput } from "./UsernamePasswordInput";
+import { validateUser } from "../utils/validateUser";
+// import { response } from "express";
 
 @ObjectType()
 class FieldError {
@@ -42,6 +36,13 @@ class UserResponse {
 
 @Resolver()
 export class UserResolver {
+  @Mutation(() => Boolean)
+  async forgotPassword() {
+    // @Ctx() {em}: MyContext // @Arg('email') email: string,
+    // const user = await em.findOne(User, {email})
+    return true;
+  }
+
   @Query(() => User, { nullable: true })
   async me(@Ctx() { req, em }: MyContext) {
     if (!req.session.userId) {
@@ -57,26 +58,10 @@ export class UserResolver {
     @Arg("options") options: UsernamePasswordInput,
     @Ctx() { em, req }: MyContext
   ): Promise<UserResponse> {
-    if (options.username.length <= 3) {
-      return {
-        errors: [
-          {
-            field: "username",
-            message: "Please make sure username is longer than 3",
-          },
-        ],
-      };
-    }
+    const errors = validateUser(options);
 
-    if (options.password.length <= 3) {
-      return {
-        errors: [
-          {
-            field: "password",
-            message: "Please make sure password is longer than 3",
-          },
-        ],
-      };
+    if (errors) {
+      return { errors };
     }
 
     const hashedPassword = await argon2.hash(options.password);
@@ -87,6 +72,7 @@ export class UserResolver {
         .getKnexQuery()
         .insert({
           username: options.username,
+          email: options.email,
           password: hashedPassword,
           created_at: new Date(),
           updated_at: new Date(),
@@ -98,7 +84,10 @@ export class UserResolver {
       if (err.code === "23505" || err.detail.includes("already exists")) {
         return {
           errors: [
-            { field: "username", message: "the username already exists" },
+            {
+              field: "username",
+              message: "Sorry, the username already exists.",
+            },
           ],
         };
       }
@@ -112,26 +101,58 @@ export class UserResolver {
 
   @Mutation(() => UserResponse)
   async login(
-    @Arg("options") options: UsernamePasswordInput,
+    @Arg("usernameOrEmail") usernameOrEmail: string,
+    @Arg("password") password: string,
     @Ctx() { em, req }: MyContext
   ): Promise<UserResponse> {
-    const user = await em.findOne(User, { username: options.username });
+    let regExMail = new RegExp(
+      "/^[a-zA-Z0-9.!#$%&’*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:.[a-zA-Z0-9-]+)*$/"
+    );
+
+    const user = await em.findOne(
+      User,
+      !regExMail.test(usernameOrEmail)
+        ? {
+            email: usernameOrEmail,
+          }
+        : { username: usernameOrEmail }
+    );
 
     if (!user) {
       return {
-        errors: [{ field: "username", message: "could not find username" }],
+        errors: [
+          {
+            field: "username",
+            message: "Could not find username, please try again.",
+          },
+        ],
       };
     }
 
-    const valid = await argon2.verify(user.password, options.password);
+    const valid = await argon2.verify(user.password, password);
     if (!valid) {
       return {
-        errors: [{ field: "password", message: "incorrect password" }],
+        errors: [{ field: "password", message: "Incorrect password." }],
       };
     }
 
     req.session.userId = user.id;
 
     return { user };
+  }
+
+  @Mutation(() => Boolean)
+  logout(@Ctx() { req, res }: MyContext) {
+    return new Promise((resolve) =>
+      req.session.destroy((err) => {
+        if (err) {
+          console.log(err);
+          resolve(false);
+          return;
+        }
+        res.clearCookie(COOKIE_NAME);
+        resolve(true);
+      })
+    );
   }
 }
