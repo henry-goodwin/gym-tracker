@@ -2,7 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.validateUser = void 0;
 const validateUser = (options) => {
-    let regExMail = new RegExp("/^[a-zA-Z0-9.!#$%&’*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:.[a-zA-Z0-9-]+)*$/");
+    let regExMail = new RegExp('@"^([w.-]+)@([w-]+)((.(w){2,3})+)$"');
     if (!regExMail.test(options.email)) {
         return;
         [

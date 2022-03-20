@@ -1,9 +1,7 @@
 import { UsernamePasswordInput } from "src/resolvers/UsernamePasswordInput";
 
 export const validateUser = (options: UsernamePasswordInput) => {
-  let regExMail = new RegExp(
-    "/^[a-zA-Z0-9.!#$%&’*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:.[a-zA-Z0-9-]+)*$/"
-  );
+  let regExMail = new RegExp('@"^([w.-]+)@([w-]+)((.(w){2,3})+)$"');
 
   if (!regExMail.test(options.email)) {
     return;
