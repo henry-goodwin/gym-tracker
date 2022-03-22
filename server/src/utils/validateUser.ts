@@ -1,11 +1,12 @@
 import { UsernamePasswordInput } from "src/resolvers/UsernamePasswordInput";
 
 export const validateUser = (options: UsernamePasswordInput) => {
-  let regExMail = new RegExp('@"^([w.-]+)@([w-]+)((.(w){2,3})+)$"');
+  const regexp = new RegExp(
+    /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
+  );
 
-  if (!regExMail.test(options.email)) {
-    return;
-    [
+  if (!options.email.match(regexp)) {
+    return [
       {
         field: "email",
         message: "Please enter a valid email.",
@@ -22,7 +23,7 @@ export const validateUser = (options: UsernamePasswordInput) => {
     ];
   }
 
-  if (regExMail.test(options.username)) {
+  if (options.username.includes("@")) {
     return [
       {
         field: "username",

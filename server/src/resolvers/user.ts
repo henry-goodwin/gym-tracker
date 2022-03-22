@@ -11,10 +11,12 @@ import {
 } from "type-graphql";
 import argon2 from "argon2";
 import { EntityManager } from "@mikro-orm/postgresql";
-import { COOKIE_NAME } from "../constants";
+import { COOKIE_NAME, FORGET_PASSWORD_PREFIX } from "../constants";
 import { UsernamePasswordInput } from "./UsernamePasswordInput";
 import { validateUser } from "../utils/validateUser";
+import { sendEmail } from "../utils/sendEmail";
 // import { response } from "express";
+import { v4 } from "uuid";
 
 @ObjectType()
 class FieldError {
@@ -36,10 +38,84 @@ class UserResponse {
 
 @Resolver()
 export class UserResolver {
+  @Mutation(() => UserResponse)
+  async changePassword(
+    @Arg("token") token: string,
+    @Arg("newPassword") newPassword: string,
+    @Ctx() { redis, em, req }: MyContext
+  ): Promise<UserResponse> {
+    if (newPassword.length < 3) {
+      return {
+        errors: [
+          {
+            field: "newPassword",
+            message: "Please enter a password that is more than 3 characters.",
+          },
+        ],
+      };
+    }
+
+    // Check token
+    const key = FORGET_PASSWORD_PREFIX + token;
+    const userID = await redis.get(key);
+    if (!userID) {
+      return {
+        errors: [
+          {
+            field: "token",
+            message: "Token expired.",
+          },
+        ],
+      };
+    }
+
+    const user = await em.findOne(User, { id: parseInt(userID) });
+
+    if (!user) {
+      return {
+        errors: [
+          {
+            field: "token",
+            message: "User no longer exists.",
+          },
+        ],
+      };
+    }
+
+    user.password = await argon2.hash(newPassword);
+    em.persistAndFlush(user);
+
+    await redis.del(key);
+
+    // Login User
+    req.session.userId = user.id;
+    return { user };
+  }
+
   @Mutation(() => Boolean)
-  async forgotPassword() {
-    // @Ctx() {em}: MyContext // @Arg('email') email: string,
-    // const user = await em.findOne(User, {email})
+  async forgotPassword(
+    @Arg("email") email: string,
+    @Ctx() { em, redis }: MyContext
+  ) {
+    const user = await em.findOne(User, { email });
+    if (!user) {
+      // The email is not in the db
+      return true;
+    }
+
+    const token = v4();
+    await redis.set(
+      FORGET_PASSWORD_PREFIX + token,
+      user.id,
+      "ex",
+      1000 * 60 * 60 * 24 * 3
+    ); // 3 Days
+
+    sendEmail(
+      email,
+      `<a href="http://localhost:3000/change-password/${token}">Reset Password</a>`
+    );
+
     return true;
   }
 
@@ -105,13 +181,13 @@ export class UserResolver {
     @Arg("password") password: string,
     @Ctx() { em, req }: MyContext
   ): Promise<UserResponse> {
-    let regExMail = new RegExp(
-      "/^[a-zA-Z0-9.!#$%&’*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:.[a-zA-Z0-9-]+)*$/"
+    const regexp = new RegExp(
+      /^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
     );
 
     const user = await em.findOne(
       User,
-      !regExMail.test(usernameOrEmail)
+      usernameOrEmail.match(regexp)
         ? {
             email: usernameOrEmail,
           }
@@ -122,7 +198,7 @@ export class UserResolver {
       return {
         errors: [
           {
-            field: "username",
+            field: "usernameOrEmail",
             message: "Could not find username, please try again.",
           },
         ],

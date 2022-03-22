@@ -2,10 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.validateUser = void 0;
 const validateUser = (options) => {
-    let regExMail = new RegExp('@"^([w.-]+)@([w-]+)((.(w){2,3})+)$"');
-    if (!regExMail.test(options.email)) {
-        return;
-        [
+    const regexp = new RegExp(/^(([^<>()\[\]\\.,;:\s@"]+(\.[^<>()\[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/);
+    if (!options.email.match(regexp)) {
+        return [
             {
                 field: "email",
                 message: "Please enter a valid email.",
@@ -20,7 +19,7 @@ const validateUser = (options) => {
             },
         ];
     }
-    if (regExMail.test(options.username)) {
+    if (options.username.includes("@")) {
         return [
             {
                 field: "username",
